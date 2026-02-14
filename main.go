@@ -5,5 +5,6 @@ import (
 )
 
 func main() {
-	fmt.Println("SOME")
+	matrix := NewMatrix(3, 2, []float64{2, 3, 4, 5, 6, 7})
+	fmt.Println("SOME", matrix.ColVector(0))
 }

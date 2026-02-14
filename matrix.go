@@ -1,6 +1,8 @@
 package main
 
-import "errors"
+import (
+	"errors"
+)
 
 var (
 	ErrInvalidMatrixDimension = errors.New("matrix dimension is either negative or zero")
@@ -34,12 +36,49 @@ func NewMatrix(rows, cols int, data []float64) *Matrix {
 	}
 }
 
+type Vector []float64
+
+func (m *Matrix) RowVector(row int) Vector {
+	if m.Rows < row || row < 0 {
+		panic(ErrInvalidDataLength)
+	}
+
+	start := m.Cols * row
+
+	return m.Data[start : start+m.Cols]
+}
+
+func (m *Matrix) ColVector(col int) Vector {
+	if m.Cols < col || col < 0 {
+		panic(ErrInvalidDataLength)
+	}
+
+	data := make([]float64, m.Rows)
+
+	for row := range m.Rows {
+		data[row] = m.Data[row*m.Cols+col]
+	}
+
+	return data
+}
+
+func DotProduct(a, b Vector) float64 {
+	return 2
+}
+
 func Multiply(a, b *Matrix) *Matrix {
 	if a.Cols != b.Rows {
 		panic(ErrInvalidMultiplyShape)
 	}
 
 	data := make([]float64, a.Rows*b.Cols)
+
+	for row := range a.Rows {
+		for col := range b.Cols {
+			dotProduct := DotProduct(a.RowVector(row), b.ColVector(col))
+			data = append(data, dotProduct)
+		}
+	}
 
 	return NewMatrix(a.Rows, b.Cols, data)
 }
