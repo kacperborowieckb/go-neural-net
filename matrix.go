@@ -63,7 +63,13 @@ func (m *Matrix) ColVector(col int) Vector {
 }
 
 func DotProduct(a, b Vector) float64 {
-	return 2
+	sum := 0.0
+
+	for i := range len(a) {
+		sum += a[i] * b[i]
+	}
+
+	return sum
 }
 
 func Multiply(a, b *Matrix) *Matrix {
@@ -75,8 +81,8 @@ func Multiply(a, b *Matrix) *Matrix {
 
 	for row := range a.Rows {
 		for col := range b.Cols {
-			dotProduct := DotProduct(a.RowVector(row), b.ColVector(col))
-			data = append(data, dotProduct)
+			// wrong index here
+			data[(row*b.Cols)+col] = DotProduct(a.RowVector(row), b.ColVector(col))
 		}
 	}
 
