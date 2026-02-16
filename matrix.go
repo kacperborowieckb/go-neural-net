@@ -5,9 +5,11 @@ import (
 )
 
 var (
-	ErrInvalidMatrixDimension = errors.New("matrix dimension is either negative or zero")
-	ErrInvalidDataLength      = errors.New("data does not satisfy matrix dimensions")
-	ErrInvalidMultiplyShape   = errors.New("incorrect matrix dimensions for dot product")
+	ErrInvalidMatrixDimension      = errors.New("matrix dimension is either negative or zero")
+	ErrInvalidDataLength           = errors.New("data does not satisfy matrix dimensions")
+	ErrInvalidMultiplyShape        = errors.New("incorrect matrix dimensions for dot product")
+	ErrInvalidAddShape             = errors.New("incorrect matrix dimensions for addition")
+	ErrInvalidProductVectorsLength = errors.New("vectors must be same length")
 )
 
 type Matrix struct {
@@ -39,7 +41,7 @@ func NewMatrix(rows, cols int, data []float64) *Matrix {
 type Vector []float64
 
 func (m *Matrix) RowVector(row int) Vector {
-	if m.Rows < row || row < 0 {
+	if row >= m.Rows || row < 0 {
 		panic(ErrInvalidDataLength)
 	}
 
@@ -49,7 +51,7 @@ func (m *Matrix) RowVector(row int) Vector {
 }
 
 func (m *Matrix) ColVector(col int) Vector {
-	if m.Cols < col || col < 0 {
+	if m.Cols <= col || col < 0 {
 		panic(ErrInvalidDataLength)
 	}
 
@@ -62,7 +64,55 @@ func (m *Matrix) ColVector(col int) Vector {
 	return data
 }
 
+func (m *Matrix) Add(other *Matrix) *Matrix {
+	if m.Rows != other.Rows || m.Cols != other.Cols {
+		panic(ErrInvalidAddShape)
+	}
+
+	dataSize := m.Rows * m.Cols
+
+	data := make([]float64, dataSize)
+
+	for i := range dataSize {
+		data[i] = m.Data[i] + other.Data[i]
+	}
+
+	return NewMatrix(m.Rows, m.Cols, data)
+}
+
+func (m *Matrix) Multiply(other *Matrix) *Matrix {
+	if m.Cols != other.Rows {
+		panic(ErrInvalidMultiplyShape)
+	}
+
+	data := make([]float64, m.Rows*other.Cols)
+
+	for row := range m.Rows {
+		for col := range other.Cols {
+			data[(row*other.Cols)+col] = DotProduct(m.RowVector(row), other.ColVector(col))
+		}
+	}
+
+	return NewMatrix(m.Rows, other.Cols, data)
+}
+
+func (m *Matrix) Apply(fn func(float64) float64) *Matrix {
+	dataSize := m.Rows * m.Cols
+
+	data := make([]float64, dataSize)
+
+	for i := range dataSize {
+		data[i] = fn(m.Data[i])
+	}
+
+	return NewMatrix(m.Rows, m.Cols, data)
+}
+
 func DotProduct(a, b Vector) float64 {
+	if len(a) != len(b) {
+		panic(ErrInvalidProductVectorsLength)
+	}
+
 	sum := 0.0
 
 	for i := range len(a) {
@@ -70,21 +120,4 @@ func DotProduct(a, b Vector) float64 {
 	}
 
 	return sum
-}
-
-func Multiply(a, b *Matrix) *Matrix {
-	if a.Cols != b.Rows {
-		panic(ErrInvalidMultiplyShape)
-	}
-
-	data := make([]float64, a.Rows*b.Cols)
-
-	for row := range a.Rows {
-		for col := range b.Cols {
-			// wrong index here
-			data[(row*b.Cols)+col] = DotProduct(a.RowVector(row), b.ColVector(col))
-		}
-	}
-
-	return NewMatrix(a.Rows, b.Cols, data)
 }
