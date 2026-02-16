@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 )
 
 var (
@@ -106,6 +107,16 @@ func (m *Matrix) Apply(fn func(float64) float64) *Matrix {
 	}
 
 	return NewMatrix(m.Rows, m.Cols, data)
+}
+
+func (m *Matrix) Print() {
+	for row := range m.Rows {
+		fmt.Printf("| ")
+		for col := range m.Cols {
+			fmt.Printf("%8.4f ", m.Data[row*m.Cols+col])
+		}
+		fmt.Printf("|\n")
+	}
 }
 
 func DotProduct(a, b Vector) float64 {
