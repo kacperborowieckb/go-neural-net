@@ -1,6 +1,10 @@
 package main
 
-import "math/rand"
+import (
+	"fmt"
+	"math"
+	"math/rand"
+)
 
 type ActivationFn func(float64) float64
 
@@ -9,15 +13,19 @@ type NeuralNetwork struct {
 	hiddenLayerSize int
 	outputLayerSize int
 
+	learningRate float64
+
 	hiddenLayer *Layer
 	outputLayer *Layer
 }
 
-func NewNeuralNetwork(inputLayerSize, hiddenLayerSize, outputLayerSize int) *NeuralNetwork {
+func NewNeuralNetwork(inputLayerSize, hiddenLayerSize, outputLayerSize int, learningRate float64) *NeuralNetwork {
 	return &NeuralNetwork{
 		inputLayerSize:  inputLayerSize,
 		hiddenLayerSize: hiddenLayerSize,
 		outputLayerSize: outputLayerSize,
+
+		learningRate: learningRate,
 
 		hiddenLayer: &Layer{
 			weights: initializeWeights(hiddenLayerSize, inputLayerSize),
@@ -31,6 +39,51 @@ func NewNeuralNetwork(inputLayerSize, hiddenLayerSize, outputLayerSize int) *Neu
 	}
 }
 
+func (net *NeuralNetwork) Train(inputData, targetData Vector) {
+	inputMatrix := NewMatrix(len(inputData), 1, inputData)
+	targetMatrix := NewMatrix(len(targetData), 1, targetData)
+
+	// pass data through network
+	hiddenLayerOutput := net.hiddenLayer.ForwardPassLayer(inputData, Sigmoid)
+	outputLayerOutput := net.outputLayer.ForwardPassLayer(hiddenLayerOutput.Data, Sigmoid)
+
+	fmt.Println()
+	outputLayerOutput.Print()
+	fmt.Println()
+
+	// output layer
+	// error after activation
+	outputLayerError := CalculateMeanSquaredErrorDerivative(outputLayerOutput, targetMatrix)
+	// derivative of activations, how sensitive change is
+	rawOutputLayerError := CalculateSigmoidDerivative(outputLayerOutput)
+	// to calculate "blame" for the neuron - how much it needs to change
+	chainedOutputError := outputLayerError.MultiplyElementWise(rawOutputLayerError)
+
+	// how much to shift weights
+	outputLayerGradient := chainedOutputError.Multiply(hiddenLayerOutput.Transpose())
+
+	updatedOutputLayerWeights := net.outputLayer.weights.Subtract(outputLayerGradient.Scale(net.learningRate))
+	updatedOutputLayerBiases := net.outputLayer.biases.Subtract(chainedOutputError.Scale(net.learningRate))
+
+	// hidden layer
+	// it's like outputLayerError for hidden layer
+	distributedError := net.outputLayer.weights.Transpose().Multiply(chainedOutputError)
+
+	rawHiddenLayerError := CalculateSigmoidDerivative(hiddenLayerOutput)
+	chainedHiddenError := distributedError.MultiplyElementWise(rawHiddenLayerError)
+	hiddenLayerGradient := chainedHiddenError.Multiply(inputMatrix.Transpose())
+
+	updatedHiddenLayerWeights := net.hiddenLayer.weights.Subtract(hiddenLayerGradient.Scale(net.learningRate))
+	updatedHiddenLayerBiases := net.hiddenLayer.biases.Subtract(chainedHiddenError.Scale(net.learningRate))
+
+	// update network weights and biases
+	net.outputLayer.weights = updatedOutputLayerWeights
+	net.outputLayer.biases = updatedOutputLayerBiases
+
+	net.hiddenLayer.weights = updatedHiddenLayerWeights
+	net.hiddenLayer.biases = updatedHiddenLayerBiases
+}
+
 type Layer struct {
 	weights *Matrix
 	biases  *Matrix
@@ -42,12 +95,8 @@ func (l *Layer) ForwardPassLayer(inputData Vector, activationFn ActivationFn) *M
 	return l.weights.Multiply(inputMatrix).Add(l.biases).Apply(activationFn)
 }
 
-func ReLU(val float64) float64 {
-	if val < 0 {
-		return 0
-	}
-
-	return val
+func Sigmoid(val float64) float64 {
+	return 1.0 / (1 + math.Exp(-1*val))
 }
 
 func initializeWeights(rows, cols int) *Matrix {
