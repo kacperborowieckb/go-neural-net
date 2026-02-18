@@ -1,42 +1,67 @@
 package main
 
 import (
-	"fmt"
+	"encoding/gob"
+	"errors"
 	"math"
 	"math/rand"
+	"os"
+)
+
+var (
+	ErrFailedToSaveNetworkFile = errors.New("failed to save neural network to a file")
+	ErrFailedToLoadNetworkFile = errors.New("failed to load neural network from a file")
 )
 
 type ActivationFn func(float64) float64
 
 type NeuralNetwork struct {
-	inputLayerSize  int
-	hiddenLayerSize int
-	outputLayerSize int
+	InputLayerSize  int
+	HiddenLayerSize int
+	OutputLayerSize int
 
-	learningRate float64
+	LearningRate float64
 
-	hiddenLayer *Layer
-	outputLayer *Layer
+	HiddenLayer *Layer
+	OutputLayer *Layer
 }
 
 func NewNeuralNetwork(inputLayerSize, hiddenLayerSize, outputLayerSize int, learningRate float64) *NeuralNetwork {
 	return &NeuralNetwork{
-		inputLayerSize:  inputLayerSize,
-		hiddenLayerSize: hiddenLayerSize,
-		outputLayerSize: outputLayerSize,
+		InputLayerSize:  inputLayerSize,
+		HiddenLayerSize: hiddenLayerSize,
+		OutputLayerSize: outputLayerSize,
 
-		learningRate: learningRate,
+		LearningRate: learningRate,
 
-		hiddenLayer: &Layer{
-			weights: initializeWeights(hiddenLayerSize, inputLayerSize),
-			biases:  NewMatrix(hiddenLayerSize, 1, make([]float64, hiddenLayerSize)),
+		HiddenLayer: &Layer{
+			Weights: initializeWeights(hiddenLayerSize, inputLayerSize),
+			Biases:  NewMatrix(hiddenLayerSize, 1, make([]float64, hiddenLayerSize)),
 		},
 
-		outputLayer: &Layer{
-			weights: initializeWeights(outputLayerSize, hiddenLayerSize),
-			biases:  NewMatrix(outputLayerSize, 1, make([]float64, outputLayerSize)),
+		OutputLayer: &Layer{
+			Weights: initializeWeights(outputLayerSize, hiddenLayerSize),
+			Biases:  NewMatrix(outputLayerSize, 1, make([]float64, outputLayerSize)),
 		},
 	}
+}
+func (net *NeuralNetwork) Predict(inputData Vector) int {
+	hiddenLayerOutput := net.HiddenLayer.ForwardPassLayer(inputData, Sigmoid)
+	outputLayerOutput := net.OutputLayer.ForwardPassLayer(hiddenLayerOutput.Data, Sigmoid)
+
+	predictionVector := outputLayerOutput.ColVector(0)
+
+	currentProbability := 0.0
+	predictionIndex := 0
+
+	for i := range predictionVector {
+		if predictionVector[i] > currentProbability {
+			currentProbability = predictionVector[i]
+			predictionIndex = i
+		}
+	}
+
+	return predictionIndex
 }
 
 func (net *NeuralNetwork) Train(inputData, targetData Vector) {
@@ -44,12 +69,16 @@ func (net *NeuralNetwork) Train(inputData, targetData Vector) {
 	targetMatrix := NewMatrix(len(targetData), 1, targetData)
 
 	// pass data through network
-	hiddenLayerOutput := net.hiddenLayer.ForwardPassLayer(inputData, Sigmoid)
-	outputLayerOutput := net.outputLayer.ForwardPassLayer(hiddenLayerOutput.Data, Sigmoid)
+	hiddenLayerOutput := net.HiddenLayer.ForwardPassLayer(inputData, Sigmoid)
+	outputLayerOutput := net.OutputLayer.ForwardPassLayer(hiddenLayerOutput.Data, Sigmoid)
 
-	fmt.Println()
-	outputLayerOutput.Print()
-	fmt.Println()
+	// fmt.Println()
+	// fmt.Println("OUTPUT:")
+	// outputLayerOutput.Print()
+	// fmt.Println()
+	// fmt.Println("TARGET:")
+	// fmt.Println(targetData)
+	// fmt.Println()
 
 	// output layer
 	// error after activation
@@ -62,37 +91,71 @@ func (net *NeuralNetwork) Train(inputData, targetData Vector) {
 	// how much to shift weights
 	outputLayerGradient := chainedOutputError.Multiply(hiddenLayerOutput.Transpose())
 
-	updatedOutputLayerWeights := net.outputLayer.weights.Subtract(outputLayerGradient.Scale(net.learningRate))
-	updatedOutputLayerBiases := net.outputLayer.biases.Subtract(chainedOutputError.Scale(net.learningRate))
+	updatedOutputLayerWeights := net.OutputLayer.Weights.Subtract(outputLayerGradient.Scale(net.LearningRate))
+	updatedOutputLayerBiases := net.OutputLayer.Biases.Subtract(chainedOutputError.Scale(net.LearningRate))
 
 	// hidden layer
 	// it's like outputLayerError for hidden layer
-	distributedError := net.outputLayer.weights.Transpose().Multiply(chainedOutputError)
+	distributedError := net.OutputLayer.Weights.Transpose().Multiply(chainedOutputError)
 
 	rawHiddenLayerError := CalculateSigmoidDerivative(hiddenLayerOutput)
 	chainedHiddenError := distributedError.MultiplyElementWise(rawHiddenLayerError)
 	hiddenLayerGradient := chainedHiddenError.Multiply(inputMatrix.Transpose())
 
-	updatedHiddenLayerWeights := net.hiddenLayer.weights.Subtract(hiddenLayerGradient.Scale(net.learningRate))
-	updatedHiddenLayerBiases := net.hiddenLayer.biases.Subtract(chainedHiddenError.Scale(net.learningRate))
+	updatedHiddenLayerWeights := net.HiddenLayer.Weights.Subtract(hiddenLayerGradient.Scale(net.LearningRate))
+	updatedHiddenLayerBiases := net.HiddenLayer.Biases.Subtract(chainedHiddenError.Scale(net.LearningRate))
 
 	// update network weights and biases
-	net.outputLayer.weights = updatedOutputLayerWeights
-	net.outputLayer.biases = updatedOutputLayerBiases
+	net.OutputLayer.Weights = updatedOutputLayerWeights
+	net.OutputLayer.Biases = updatedOutputLayerBiases
 
-	net.hiddenLayer.weights = updatedHiddenLayerWeights
-	net.hiddenLayer.biases = updatedHiddenLayerBiases
+	net.HiddenLayer.Weights = updatedHiddenLayerWeights
+	net.HiddenLayer.Biases = updatedHiddenLayerBiases
+}
+
+func (net *NeuralNetwork) Save(fileName string) {
+	file, err := os.Create(fileName)
+	if err != nil {
+		panic(ErrFailedToSaveNetworkFile)
+	}
+	defer file.Close()
+
+	encoder := gob.NewEncoder(file)
+
+	err = encoder.Encode(net)
+	if err != nil {
+		panic(ErrFailedToSaveNetworkFile)
+	}
+}
+
+func LoadNeuralNetwork(fileName string) *NeuralNetwork {
+	file, err := os.Open(fileName)
+	if err != nil {
+		panic(ErrFailedToLoadNetworkFile)
+	}
+	defer file.Close()
+
+	decoder := gob.NewDecoder(file)
+
+	net := &NeuralNetwork{}
+
+	err = decoder.Decode(net)
+	if err != nil {
+		panic(ErrFailedToLoadNetworkFile)
+	}
+
+	return net
 }
 
 type Layer struct {
-	weights *Matrix
-	biases  *Matrix
+	Weights *Matrix
+	Biases  *Matrix
 }
 
 func (l *Layer) ForwardPassLayer(inputData Vector, activationFn ActivationFn) *Matrix {
 	inputMatrix := NewMatrix(len(inputData), 1, inputData)
 
-	return l.weights.Multiply(inputMatrix).Add(l.biases).Apply(activationFn)
+	return l.Weights.Multiply(inputMatrix).Add(l.Biases).Apply(activationFn)
 }
 
 func Sigmoid(val float64) float64 {
